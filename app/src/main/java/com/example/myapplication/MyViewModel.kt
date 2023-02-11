@@ -4,10 +4,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-class MyViewModel(
-    settings: AppSettings,
-    private val saveSettings: suspend ((AppSettings) -> AppSettings) -> Unit,
-) {
+class MyViewModel {
+    lateinit var saveSettings: suspend ((AppSettings) -> AppSettings) -> Unit
+    lateinit var requestNotificationPermission: () -> Unit
+    lateinit var requestBatteryOptimizePermission: () -> Unit
+
+    var notificationPermission by mutableStateOf(false)
+    var batteryOptimizePermission by mutableStateOf(false)
+
     var isCharging by mutableStateOf(false)
     var levelPercentage by mutableStateOf(0)
     var overchargingLimit by mutableStateOf("")
@@ -38,9 +42,5 @@ class MyViewModel(
         overchargingLimit = newValue.overchargingLimit.toString()
         underchargingLimit = newValue.underchargingLimit.toString()
         snooze = newValue.snooze
-    }
-
-    init {
-        apply(settings)
     }
 }

@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
@@ -43,12 +46,11 @@ val Context.workManager get() = WorkManager.getInstance(this)
 val isTiramisuApi get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
 fun Context.hasPermission(permission: String) =
-    !isTiramisuApi || (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED)
+    checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
 class MainActivity : ComponentActivity() {
     private val connectionReceiver = PowerConnectionReceiver(this::readChargingStatus)
-    private lateinit var model: MyViewModel
-    private var permissionGiven by mutableStateOf(false)
+    private val model = MyViewModel()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,56 +58,78 @@ class MainActivity : ComponentActivity() {
         val registerForActivityResult =
             if (isTiramisuApi)
                 registerForActivityResult(RequestPermission()) {
-                    permissionGiven = it
+                    model.notificationPermission = it
                 }
             else
                 null
 
         lifecycleScope.launchWhenCreated {
             lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                resumeAction(registerForActivityResult)
+                resumeAction()
+                requestNotificationPermission(registerForActivityResult)
             }
         }
 
         setContent {
             MyApplicationTheme {
-                val appSettings = dataStore.data.collectAsState(initial = AppSettings()).value
-
                 val scope = rememberCoroutineScope()
                 remember {
-                    model = MyViewModel(
-                        settings = appSettings,
+                    with(model) {
                         saveSettings = { transformFn ->
                             dataStore.updateData(transformFn)
                             scope.launch {
                                 startNotificationsWork()
                             }
-                        },
-                    )
+                        }
+                        requestNotificationPermission = {
+                            requestNotificationPermission(registerForActivityResult)
+                        }
+                        requestBatteryOptimizePermission = ::requestBatteryOptimizePermission
+                    }
+
                     scope.launch {
                         launch { dataStore.data.collectLatest(model::apply) }
                         startNotificationsWork()
                     }
                 }
 
-                ChargingStatusAndConfigurations(model, permissionGiven)
+                ChargingStatusAndConfigurations(model)
             }
         }
     }
 
-    private fun resumeAction(registerForActivityResult: ActivityResultLauncher<String>?) {
+    private fun resumeAction() {
         registerReceiver(connectionReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        checkIfIgnoringBatteryOptimizations()
+    }
 
+    private fun requestNotificationPermission(registerForActivityResult: ActivityResultLauncher<String>?) {
         if (registerForActivityResult != null && isTiramisuApi) {
-            permissionGiven =
-                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-                        PackageManager.PERMISSION_GRANTED
+            model.notificationPermission = hasPermission(Manifest.permission.POST_NOTIFICATIONS)
 
-            if (!permissionGiven)
+            if (!model.notificationPermission)
                 registerForActivityResult.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            permissionGiven = true
+            model.notificationPermission = true
         }
+    }
+
+    private fun requestBatteryOptimizePermission() {
+        checkIfIgnoringBatteryOptimizations()
+        if (model.batteryOptimizePermission)
+            return
+
+        startActivity(
+            Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:$packageName"),
+            )
+        )
+    }
+
+    private fun checkIfIgnoringBatteryOptimizations() {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        model.batteryOptimizePermission = powerManager.isIgnoringBatteryOptimizations(packageName)
     }
 
     private suspend fun startNotificationsWork() {
@@ -113,7 +137,7 @@ class MainActivity : ComponentActivity() {
             createNotificationChannel()
             cancelPrevious()
             val appSettings = dataStore.data.firstOrNull() ?: return
-            if (permissionGiven && !appSettings.snooze)
+            if (model.notificationPermission && !appSettings.snooze)
                 scheduleNextWork(
                     NotificationStage(model.isCharging, model.levelPercentage, appSettings)
                 )
@@ -130,35 +154,33 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun ChargingStatusAndConfigurations(model: MyViewModel, permissionGiven: Boolean) {
+fun ChargingStatusAndConfigurations(model: MyViewModel) {
     Column(horizontalAlignment = Alignment.Start) {
-        Row(Modifier.height(16.dp)) {
+        PermissionError(
+            model.notificationPermission,
+            text = "App won't work without 'Notification' permission",
+            requestPermission = model.requestNotificationPermission,
+        )
+
+        PermissionError(
+            model.batteryOptimizePermission,
+            text = "Allow app to run unrestricted in background",
+            requestPermission = model.requestBatteryOptimizePermission,
+        )
+
+        Row(
+            modifier = Modifier
+                .height(80.dp)
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Image(
                 painter = painterResource(R.mipmap.ic_launcher_foreground),
                 contentDescription = null,
                 contentScale = ContentScale.FillHeight,
                 modifier = Modifier.fillMaxHeight()
             )
-        }
-
-        if (!permissionGiven)
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.error,
-            ) {
-                Text(
-                    "App won't work without 'Notification' permission",
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(5.dp),
-                    style = TextStyle(),
-                    fontStyle = FontStyle.Italic,
-                )
-            }
-
-        Row(Modifier.padding(horizontal = 10.dp)) {
-            Column {
+            Column(Modifier.padding(start = 10.dp)) {
                 PairRow("Charging", if (model.isCharging) "Yes" else "No")
                 PairRow("Level", "${model.levelPercentage} %")
             }
@@ -166,6 +188,50 @@ fun ChargingStatusAndConfigurations(model: MyViewModel, permissionGiven: Boolean
 
         Row(Modifier.padding(horizontal = 10.dp)) {
             ConfigForm(model)
+        }
+    }
+}
+
+private val noOp = {}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PermissionError(
+    hasPermission: Boolean,
+    text: String,
+    requestPermission: () -> Unit = noOp,
+) {
+    if (!hasPermission) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.error,
+            shadowElevation = 2.dp,
+            onClick = requestPermission,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = text,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    style = TextStyle(),
+                    fontStyle = FontStyle.Italic,
+                )
+
+                if (requestPermission != noOp)
+                    Column {
+                        TextButton(onClick = requestPermission) {
+                            Text("Allow")
+                        }
+                    }
+            }
+
+            Divider(
+                color = MaterialTheme.colorScheme.error,
+            )
         }
     }
 }
@@ -182,7 +248,8 @@ private fun ConfigForm(model: MyViewModel) {
 
         val isUnderchargingLimitValid = model.underchargingLimit.toIntOrNull().let {
             it != null && underChargingLimitRange.contains(it) &&
-                    (model.overchargingLimit.toIntOrNull() ?: overChargingLimitRange.min()) - 5 > it
+                    (model.overchargingLimit.toIntOrNull()
+                        ?: overChargingLimitRange.min()) - 5 > it
         }
 
         val isOverchargingLimitValid = model.overchargingLimit.toIntOrNull().let {
@@ -345,8 +412,12 @@ fun PairRow(key: String, value: String) {
 fun DefaultPreview() {
     MyApplicationTheme {
         val model = remember {
-            MyViewModel(settings = AppSettings(), saveSettings = {})
+            MyViewModel().apply {
+                saveSettings = {}
+                requestNotificationPermission = { true }
+                requestBatteryOptimizePermission = { true }
+            }
         }
-        ChargingStatusAndConfigurations(model, false)
+        ChargingStatusAndConfigurations(model)
     }
 }

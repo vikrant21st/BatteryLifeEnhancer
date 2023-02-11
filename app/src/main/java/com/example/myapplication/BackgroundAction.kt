@@ -111,13 +111,14 @@ class BackgroundAction(
     @SuppressLint("MissingPermission")
     private fun notifyIfNeeded(appSettings: AppSettings, notificationStage: NotificationStage) {
         with(NotificationManagerCompat.from(applicationContext)) {
-            if (isNotificationRequired(notificationStage) &&
-                applicationContext.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
-            ) {
+            if (isNotificationRequired(notificationStage) && hasPermission())
                 notify(TAG_BATTERY_STATUS_CHECKER, NOTIFICATION_ID, createNotification(appSettings))
-            }
         }
     }
+
+    private fun hasPermission() =
+        !isTiramisuApi ||
+                applicationContext.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
 
     private fun createNotification(appSettings: AppSettings): Notification {
         val intent = Intent(applicationContext, MainActivity::class.java).apply {

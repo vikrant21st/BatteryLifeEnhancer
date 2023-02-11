@@ -5,17 +5,21 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
@@ -27,16 +31,19 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.work.WorkManager
-import com.example.myapplication.BackgroundAction.Companion.cancelPrevious
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 
 val Context.dataStore by dataStore("app-settings.json", AppSettingsSerializer)
+
 val Context.workManager get() = WorkManager.getInstance(this)
+
+val isTiramisuApi get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
 fun Context.hasPermission(permission: String) =
-    checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    !isTiramisuApi || (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED)
 
 class MainActivity : ComponentActivity() {
     private val connectionReceiver = PowerConnectionReceiver(this::readChargingStatus)
@@ -46,9 +53,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val registerForActivityResult = registerForActivityResult(RequestPermission()) {
-            permissionGiven = it
-        }
+        val registerForActivityResult =
+            if (isTiramisuApi)
+                registerForActivityResult(RequestPermission()) {
+                    permissionGiven = it
+                }
+            else
+                null
 
         lifecycleScope.launchWhenCreated {
             lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -64,10 +75,11 @@ class MainActivity : ComponentActivity() {
                 remember {
                     model = MyViewModel(
                         settings = appSettings,
-                        saveSettings = { transformFn -> dataStore.updateData(transformFn) },
-                        onSnooze = { cancelPrevious() },
-                        onUnSnooze = {
-                            scope.launch { startNotificationsWork() }
+                        saveSettings = { transformFn ->
+                            dataStore.updateData(transformFn)
+                            scope.launch {
+                                startNotificationsWork()
+                            }
                         },
                     )
                     scope.launch {
@@ -81,18 +93,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun resumeAction(registerForActivityResult: ActivityResultLauncher<String>) {
-        registerReceiver(
-            connectionReceiver,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        )
+    private fun resumeAction(registerForActivityResult: ActivityResultLauncher<String>?) {
+        registerReceiver(connectionReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
-        permissionGiven =
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-                    PackageManager.PERMISSION_GRANTED
+        if (registerForActivityResult != null && isTiramisuApi) {
+            permissionGiven =
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                        PackageManager.PERMISSION_GRANTED
 
-        if (!permissionGiven)
-            registerForActivityResult.launch(Manifest.permission.POST_NOTIFICATIONS)
+            if (!permissionGiven)
+                registerForActivityResult.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            permissionGiven = true
+        }
     }
 
     private suspend fun startNotificationsWork() {
@@ -100,7 +113,7 @@ class MainActivity : ComponentActivity() {
             createNotificationChannel()
             cancelPrevious()
             val appSettings = dataStore.data.firstOrNull() ?: return
-            if (permissionGiven)
+            if (permissionGiven && !appSettings.snooze)
                 scheduleNextWork(
                     NotificationStage(model.isCharging, model.levelPercentage, appSettings)
                 )
@@ -119,6 +132,15 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ChargingStatusAndConfigurations(model: MyViewModel, permissionGiven: Boolean) {
     Column(horizontalAlignment = Alignment.Start) {
+        Row(Modifier.height(16.dp)) {
+            Image(
+                painter = painterResource(R.mipmap.ic_launcher_foreground),
+                contentDescription = null,
+                contentScale = ContentScale.FillHeight,
+                modifier = Modifier.fillMaxHeight()
+            )
+        }
+
         if (!permissionGiven)
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer,
@@ -280,11 +302,6 @@ private fun ConfigForm(model: MyViewModel) {
         }
     }
 }
-
-@Composable
-private fun labelTextColor(enabled: Boolean) =
-    if (enabled) MaterialTheme.colorScheme.onSurface
-    else MaterialTheme.colorScheme.secondary
 
 @Composable
 fun PairRow(

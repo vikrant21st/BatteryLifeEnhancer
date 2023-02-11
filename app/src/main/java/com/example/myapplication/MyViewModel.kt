@@ -7,8 +7,6 @@ import androidx.compose.runtime.setValue
 class MyViewModel(
     settings: AppSettings,
     private val saveSettings: suspend ((AppSettings) -> AppSettings) -> Unit,
-    private val onSnooze: (() -> Unit)? = null,
-    private val onUnSnooze: (() -> Unit)? = null,
 ) {
     var isCharging by mutableStateOf(false)
     var levelPercentage by mutableStateOf(0)
@@ -16,22 +14,12 @@ class MyViewModel(
     var underchargingLimit by mutableStateOf("")
     var snooze by mutableStateOf(false)
 
-//    fun readValues(connectionReceiver: PowerConnectionReceiver) {
-//        isCharging = connectionReceiver.isCharging
-//        levelPercentage = connectionReceiver.level
-//    }
-
     fun updateChargingStatus(isCharging: Boolean, levelPercentage: Int) {
         this.isCharging = isCharging
         this.levelPercentage = levelPercentage
     }
 
     suspend fun snoozeUnSnooze() {
-        if (snooze)
-            onUnSnooze?.invoke()
-        else
-            onSnooze?.invoke()
-
         snooze = !snooze
         save()
     }

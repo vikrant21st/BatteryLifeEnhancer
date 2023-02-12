@@ -14,7 +14,6 @@ android {
     defaultConfig {
         applicationId = "com.example.myapplication"
         minSdk = 28
-//        minSdk = 33
         targetSdk = 33
         versionCode = 1
         versionName = "1.0"
@@ -62,6 +61,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.6.1")
     implementation("androidx.compose.ui:ui:$compose_version")
     implementation("androidx.compose.ui:ui-tooling-preview:$compose_version")
+//    implementation("androidx.compose.material:material-icons-extended:$compose_version")
     implementation("androidx.compose.material3:material3:1.0.1")
     implementation("androidx.work:work-runtime-ktx:$work_version")
 

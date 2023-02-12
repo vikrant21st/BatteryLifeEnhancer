@@ -153,6 +153,7 @@ class BackgroundAction(
     companion object {
         private const val logTag = "BackgroundAction"
         private const val TAG_BATTERY_STATUS_CHECKER = "BatteryLifeEnhancerCheckerWork"
+        const val TAG_APP_REVIEWER = "BatteryLifeEnhancerReviverWork"
         private const val NOTIFICATION_CHANNEL = "BatteryLifeEnhancerChannel"
         private const val NOTIFICATION_ID = 1
 

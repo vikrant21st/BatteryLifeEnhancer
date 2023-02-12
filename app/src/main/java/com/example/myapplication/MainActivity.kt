@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launchWhenCreated {
             lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 resumeAction()
-                requestNotificationPermission1(registerForActivityResult)
+                requestNotificationPermission(registerForActivityResult)
             }
         }
 
@@ -86,13 +86,14 @@ class MainActivity : ComponentActivity() {
                         }
 
                         notificationPermissionModel.requestPermission = {
-                            requestNotificationPermission1(registerForActivityResult)
+                            requestNotificationPermission(registerForActivityResult)
                         }
                     }
 
                     scope.launch {
                         launch { dataStore.data.collectLatest(model.configModel::apply) }
                         startNotificationsWork()
+                        startReviverWork()
                     }
                 }
 
@@ -107,7 +108,7 @@ class MainActivity : ComponentActivity() {
         registerReceiver(connectionReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
     }
 
-    private fun requestNotificationPermission1(registerForActivityResult: ActivityResultLauncher<String>?) {
+    private fun requestNotificationPermission(registerForActivityResult: ActivityResultLauncher<String>?) {
         if (registerForActivityResult != null && isTiramisuApi) {
             model.notificationPermissionModel.hasPermission = hasPermission(Manifest.permission.POST_NOTIFICATIONS)
 
@@ -116,6 +117,11 @@ class MainActivity : ComponentActivity() {
         } else {
             model.notificationPermissionModel.hasPermission = true
         }
+    }
+
+    private fun startReviverWork() {
+        AppReviverBackgroundAction.cancelPrevious(this)
+        AppReviverBackgroundAction.scheduleWork(this)
     }
 
     private suspend fun startNotificationsWork() {

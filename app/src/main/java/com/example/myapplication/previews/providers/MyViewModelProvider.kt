@@ -9,8 +9,6 @@ class MyViewModelProvider : PreviewParameterProvider<MainViewModel> {
         MainViewModel().apply {
             saveSettings = {}
             chargingStatus = ChargingStatusModel(true, 50)
-            notificationPermissionModel.requestPermission =
-                { notificationPermissionModel.hasPermission = true }
         }
     )
 }

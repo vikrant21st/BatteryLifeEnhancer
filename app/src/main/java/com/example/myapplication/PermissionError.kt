@@ -1,10 +1,12 @@
 package com.example.myapplication
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -20,43 +22,86 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
-import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.example.myapplication.previews.providers.PermissionErrorModelMiniProvider
+import com.example.myapplication.previews.providers.PermissionErrorModelProvider
 
-class PermissionsErrorModel(
-    val text: String,
-) {
-    var hasPermission by mutableStateOf(false)
-    lateinit var requestPermission: () -> Unit
+typealias OnPermissionResult = (model: PermissionErrorModel, isGranted: Boolean) -> Unit
+
+interface PermissionErrorModelIfc {
+    val permission: String
 }
 
-class PermissionsErrorModelProvider : PreviewParameterProvider<PermissionsErrorModel> {
-    override val values = sequenceOf(
-        PermissionsErrorModel(
-            text = "Allow permission request for something, user may need to reinstall" +
-                    "the app on some devices if permission is denied multiple times",
-        ).apply {
-            requestPermission = { hasPermission = true }
-        }
-    )
+class PermissionErrorModel(
+    override val permission: String,
+    val missingPermissionMessage: String,
+    val onPermissionResult: OnPermissionResult,
+): PermissionErrorModelIfc {
+    var hasPermission by mutableStateOf(false)
+}
+
+class PermissionErrorModelMini(
+    override val permission: String,
+    val missingPermissionMessage: String,
+    val launchIntent: Intent,
+    val setPermission: (PermissionErrorModelMini) -> Unit,
+): PermissionErrorModelIfc {
+    var hasPermission by mutableStateOf(true)
 }
 
 @Preview(showBackground = true)
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PermissionError(
-    @PreviewParameter(PermissionsErrorModelProvider::class) model: PermissionsErrorModel,
+    @PreviewParameter(PermissionErrorModelMiniProvider::class)
+    model: PermissionErrorModelMini,
+    onClick: () -> Unit = {},
 ) {
     if (model.hasPermission)
         return
 
+    PermissionErrorMessage(
+        text = model.missingPermissionMessage,
+        onClick = onClick,
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun PermissionError(
+    @PreviewParameter(PermissionErrorModelProvider::class)
+    model: PermissionErrorModel,
+) {
+    if (model.hasPermission)
+        return
+
+    val permissionResultLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+            onResult = { isGranted ->
+                model.onPermissionResult(model, isGranted)
+            }
+        )
+
+    PermissionErrorMessage(
+        text = model.missingPermissionMessage,
+        onClick = {
+            permissionResultLauncher.launch(model.permission)
+        },
+    )
+}
+
+@Composable
+fun PermissionErrorMessage(
+    text: String,
+    onClick: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.error,
         shadowElevation = 2.dp,
-        onClick = model.requestPermission,
+        onClick = onClick,
     ) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             Row(
@@ -64,14 +109,17 @@ fun PermissionError(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = model.requestPermission) {
-                    Text("Allow")
+                TextButton(onClick = onClick) {
+                    Text("Grant")
                 }
 
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Text(
-                        text = model.text,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        text = text,
+                        modifier = Modifier.padding(
+                            horizontal = 10.dp,
+                            vertical = 5.dp
+                        ),
                         style = TextStyle(),
                     )
                 }

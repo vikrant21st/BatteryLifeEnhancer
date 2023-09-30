@@ -1,186 +1,106 @@
 package com.example.myapplication
 
 import android.Manifest
-import android.content.Context
+import android.app.Activity
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Divider
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.unit.dp
-import androidx.datastore.dataStore
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.work.WorkManager
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import com.example.myapplication.navigation.ChargingAlarmService
+import com.example.myapplication.navigation.TodoNavGraph
 import com.example.myapplication.ui.theme.MyApplicationTheme
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
-val Context.dataStore by dataStore("app-settings.json", AppSettingsSerializer)
+const val UnusedAppRestrictionsRequirement = "UnusedAppRestrictionsRequirement"
 
-val Context.workManager get() = WorkManager.getInstance(this)
+fun isMinApiVersion(versionCode: Int) = Build.VERSION.SDK_INT >= versionCode
 
-val isTiramisuApi get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-
-fun Context.hasPermission(permission: String) =
-    checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+fun Activity.openAppSettings() {
+    Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", packageName, null)
+    ).also(::startActivity)
+}
 
 class MainActivity : ComponentActivity() {
-    private val connectionReceiver = PowerConnectionReceiver(this::readChargingStatus)
-    private val model = MainViewModel()
+    private val permissionsToRequest =
+        buildSet<String> {
+            if (isMinApiVersion(Build.VERSION_CODES.TIRAMISU))
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS)
+
+//            if (isMinApiVersion(Build.VERSION_CODES.TIRAMISU))
+//                arrayOf(Manifest.permission.USE_EXACT_ALARM)
+//            else if (isMinApiVersion(Build.VERSION_CODES.S))
+//                arrayOf(Manifest.permission.SCHEDULE_EXACT_ALARM)
+
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val registerForActivityResult =
-            if (isTiramisuApi)
-                registerForActivityResult(RequestPermission()) {
-                    model.notificationPermissionModel.hasPermission = it
-                }
-            else
-                null
+        val chargingAlarmService = ChargingAlarmService.getInstance(this)
+        val savedAppSettings = runBlocking { savedAppSettings()!! }
 
-        lifecycleScope.launchWhenCreated {
-            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                resumeAction()
-                requestNotificationPermission(registerForActivityResult)
-            }
-        }
+        workManager.enqueueUniqueWork(
+            /* uniqueWorkName = */ AppStartupProcess::class.java.simpleName,
+            ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<AppStartupProcess>()
+                .addTag(AppStartupProcess::class.java.simpleName)
+                .setInitialDelay(1.seconds.toJavaDuration())
+                .build(),
+        )
 
         setContent {
             MyApplicationTheme {
-                val scope = rememberCoroutineScope()
-                remember {
-                    with(model) {
-                        saveSettings = { transformFn ->
-                            dataStore.updateData(transformFn)
-                            scope.launch {
-                                startNotificationsWork()
-                            }
-                        }
+                val viewModel = viewModel<MainViewModel>()
 
-                        notificationPermissionModel.requestPermission = {
-                            requestNotificationPermission(registerForActivityResult)
-                        }
-                    }
-
-                    scope.launch {
-                        launch { dataStore.data.collectLatest(model.configModel::apply) }
-                        startNotificationsWork()
-                        startReviverWork()
-                    }
-                }
+                AppPermissionsDialogs(viewModel, this, permissionsToRequest)
 
                 Surface(Modifier.fillMaxSize()) {
-                    ChargingStatusAndConfigurations(model)
+                    Column {
+                        Row {
+                            PermissionsErrors(viewModel)
+                        }
+
+                        Row {
+                            TodoNavGraph(
+                                chargingAlarmService,
+                                savedAppSettings,
+                                updateAppSettings = { transformFunc ->
+                                    appSettingsDataStore.updateData(transformFunc)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                LaunchedEffect(viewModel) {
+                    launch {
+                        repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                            viewModel.initializePermissions(
+                                hasPermission = { hasPermission(it) },
+                            )
+                        }
+                    }
                 }
             }
         }
-    }
-
-    private fun resumeAction() {
-        registerReceiver(connectionReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-    }
-
-    private fun requestNotificationPermission(registerForActivityResult: ActivityResultLauncher<String>?) {
-        if (registerForActivityResult != null && isTiramisuApi) {
-            model.notificationPermissionModel.hasPermission = hasPermission(Manifest.permission.POST_NOTIFICATIONS)
-
-            if (!model.notificationPermissionModel.hasPermission)
-                registerForActivityResult.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            model.notificationPermissionModel.hasPermission = true
-        }
-    }
-
-    private fun startReviverWork() {
-        AppReviverBackgroundAction.cancelPrevious(this)
-        AppReviverBackgroundAction.scheduleWork(this)
-    }
-
-    private suspend fun startNotificationsWork() {
-        with(BackgroundAction) {
-            createNotificationChannel()
-            cancelPrevious()
-            val appSettings = dataStore.data.firstOrNull() ?: return
-            if (model.notificationPermissionModel.hasPermission && !appSettings.snooze)
-                scheduleNextWork(
-                    NotificationStage(model.chargingStatus.isCharging, model.chargingStatus.levelPercentage, appSettings)
-                )
-        }
-    }
-
-    private fun readChargingStatus(isCharging: Boolean, levelPercentage: Int) =
-        model.updateChargingStatus(isCharging, levelPercentage)
-
-    override fun onStop() {
-        super.onStop()
-        unregisterReceiver(connectionReceiver)
-    }
-}
-
-@Composable
-fun ChargingStatusAndConfigurations(model: MainViewModel) {
-    Column(horizontalAlignment = Alignment.Start) {
-        PermissionError(model.notificationPermissionModel)
-
-        ChargingStatus(model.chargingStatus)
-
-        Divider()
-
-        Spacer(Modifier.height(20.dp))
-
-        Row(Modifier.fillMaxHeight()) {
-            ConfigView(model.configModel)
-        }
-    }
-
-    Box (
-        modifier = Modifier
-           .fillMaxSize(),
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        SnackbarHost(hostState = model.snackBarHostState) {
-            Snackbar(
-                snackbarData = it,
-                modifier = Modifier.padding(20.dp),
-            )
-        }
-
-        if (LocalInspectionMode.current)
-            Snackbar(
-                modifier = Modifier.padding(20.dp),
-                dismissAction = {
-                    TextButton({}) { Text("Close") }
-                },
-            ) {
-                Text(text = "This is a Snack bar")
-            }
     }
 }

@@ -1,11 +1,22 @@
 val compose_version: String by rootProject.extra
 val work_version: String by rootProject.extra
 val lifecycle_version: String by rootProject.extra
+val nav_version: String by rootProject.extra
+val activity_version: String by rootProject.extra
+val mat3_version: String by rootProject.extra
+val glance_version: String by rootProject.extra
+val datastore_version: String by rootProject.extra
+val immutable_collections_version: String by rootProject.extra
+val serialization_version: String by rootProject.extra
+val junit_version: String by rootProject.extra
+val androidx_junit_version: String by rootProject.extra
+val espresso_version: String by rootProject.extra
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     kotlin("plugin.serialization") version "1.8.21"
+    id("androidx.navigation.safeargs.kotlin")
 }
 
 android {
@@ -14,7 +25,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.myapplication"
-        minSdk = 28
+        minSdk = 29
         targetSdk = 33
         versionCode = 1
         versionName = "1.0"
@@ -42,6 +53,7 @@ android {
     }
     kotlinOptions {
         jvmTarget = "1.8"
+        freeCompilerArgs += listOf("-Xcontext-receivers")
     }
     buildFeatures {
         compose = true
@@ -59,22 +71,27 @@ android {
 dependencies {
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycle_version")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycle_version")
-//    implementation("androidx.core:core-ktx:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycle_version")
-    implementation("androidx.activity:activity-compose:1.7.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
+    implementation("androidx.activity:activity-compose:$activity_version")
     implementation("androidx.compose.ui:ui:$compose_version")
     implementation("androidx.compose.ui:ui-tooling-preview:$compose_version")
-    implementation("androidx.compose.material3:material3:1.1.0")
+    implementation("androidx.compose.material3:material3:$mat3_version")
     implementation("androidx.work:work-runtime-ktx:$work_version")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
+    implementation("androidx.navigation:navigation-compose:$nav_version")
 
-    implementation("androidx.datastore:datastore:1.0.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.5")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.4.1")
+    // For Glance support
+    implementation ("androidx.glance:glance:$glance_version")
+    // For AppWidgets support
+    implementation ("androidx.glance:glance-appwidget:$glance_version")
 
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    implementation("androidx.datastore:datastore:$datastore_version")
+    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:$immutable_collections_version")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$serialization_version")
+
+    testImplementation("junit:junit:$junit_version")
+    androidTestImplementation("androidx.test.ext:junit:$androidx_junit_version")
+    androidTestImplementation("androidx.test.espresso:espresso-core:$espresso_version")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:$compose_version")
     debugImplementation("androidx.compose.ui:ui-tooling:$compose_version")
     debugImplementation("androidx.compose.ui:ui-test-manifest:$compose_version")

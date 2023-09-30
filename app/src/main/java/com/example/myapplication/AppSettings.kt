@@ -11,6 +11,13 @@ data class AppSettings(
     val overchargingLimit: Int = 80,
     val underchargingLimit: Int = 30,
     val snooze: Boolean = false,
+    val appLists: List<App> = emptyList(),
+    val isAppInitialized: Boolean = false,
+)
+
+@kotlinx.serialization.Serializable
+data class App(
+    val packageName: String,
 )
 
 @Suppress("BlockingMethodInNonBlockingContext")
@@ -27,7 +34,7 @@ object AppSettingsSerializer : Serializer<AppSettings> {
             )
         } catch (e: SerializationException) {
             e.printStackTrace()
-            defaultValue
+            AppSettings()
         }
     }
 

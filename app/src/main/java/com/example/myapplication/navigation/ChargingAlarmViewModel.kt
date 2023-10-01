@@ -16,6 +16,7 @@ class ChargingAlarmViewModel(
 ) : ViewModel() {
     var snooze by mutableStateOf(appSettings.snooze)
     var chargingLimit by mutableStateOf(appSettings.overchargingLimit.toString())
+    var reviveAppInDays by mutableStateOf(appSettings.reviveAppInDays.toString())
 
     fun updateChargingLimit() {
         viewModelScope.launch {

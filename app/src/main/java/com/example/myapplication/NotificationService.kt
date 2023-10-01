@@ -13,10 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.os.HandlerCompat
 import kotlin.time.Duration.Companion.seconds
 
 interface NotificationService {
@@ -24,8 +21,10 @@ interface NotificationService {
     fun cancelAllNotifications(): Result<Any>
     suspend fun sendNotificationForOvercharging(): Result<Any>
     suspend fun sendNotificationForChargingStarted(): Result<Any>
+    suspend fun sendNotificationForAppRevival(): Result<Any>
     suspend fun cancelNotificationForOvercharging(): Result<Any>
     suspend fun cancelNotificationForChargingStarted(): Result<Any>
+    suspend fun cancelNotificationForAppRevival(): Result<Any>
 
     companion object {
         fun getInstance(context: Context): NotificationService =
@@ -76,6 +75,10 @@ private class NotificationServiceImpl(
                 manager.cancel(
                     TAG_BATTERY_STATUS_CHECKER,
                     CHARGING_STARTED_NOTIFICATION_ID
+                )
+                manager.cancel(
+                    TAG_BATTERY_STATUS_CHECKER,
+                    APP_REVIVER_NOTIFICATION_ID
                 )
             }
         }
@@ -162,6 +165,42 @@ private class NotificationServiceImpl(
                 )
         }
 
+    override suspend fun sendNotificationForAppRevival(): Result<Any> =
+        runCatchingAndLogIfError(
+            TAG,
+            "sendNotificationForAppRevival: Error"
+        ) {
+            if (hasPermission()) {
+                Log.d(TAG, "sendNotificationForAppRevival")
+                val manager = applicationContext.notificationManager
+
+                val notification = manager.activeNotifications.find {
+                    it.tag == TAG_BATTERY_STATUS_CHECKER &&
+                            it.id == APP_REVIVER_NOTIFICATION_ID
+                }
+                if (notification == null) {
+                    manager.notify(
+                        TAG_BATTERY_STATUS_CHECKER,
+                        APP_REVIVER_NOTIFICATION_ID,
+                        getAppRevivalNotification(),
+                    )
+                }
+            }
+        }
+
+    override suspend fun cancelNotificationForAppRevival(): Result<Any> =
+        runCatchingAndLogIfError(
+            TAG,
+            "cancelNotificationForOvercharging: Error"
+        ) {
+            Log.d(TAG, "cancelNotificationForOvercharging")
+            applicationContext.notificationManager
+                .cancel(
+                    TAG_BATTERY_STATUS_CHECKER,
+                    APP_REVIVER_NOTIFICATION_ID,
+                )
+        }
+
     private fun hasPermission() =
         !isMinApiVersion(Build.VERSION_CODES.TIRAMISU) ||
                 applicationContext.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -193,6 +232,21 @@ private class NotificationServiceImpl(
             PendingIntent.FLAG_IMMUTABLE
         )
     }
+
+    private suspend fun getAppRevivalNotification(): Notification =
+        NotificationCompat.Builder(
+            applicationContext,
+            NOTIFICATION_CHANNEL_ID,
+        )
+            .setSmallIcon(R.drawable.notification_icon)
+            .setColor(Color.RED)
+            .setContentTitle("Action needed")
+            .setContentText("App needs to be opened every " +
+                    "${applicationContext.savedAppSettings()?.reviveAppInDays} days")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(mainActivityLaunchIntent())
+            .setAutoCancel(false)
+            .build()
 
     private fun getChargingStartedNotification(): Notification {
         val intent =
@@ -229,6 +283,7 @@ private class NotificationServiceImpl(
         private val TAG = this::class.java.enclosingClass.simpleName.take(23)
         private const val OVERCHARGING_ALARM_NOTIFICATION_ID = 1
         private const val CHARGING_STARTED_NOTIFICATION_ID = 2
+        private const val APP_REVIVER_NOTIFICATION_ID = 3
 
         private const val TAG_BATTERY_STATUS_CHECKER =
             "BatteryLifeEnhancerCheckerWork"

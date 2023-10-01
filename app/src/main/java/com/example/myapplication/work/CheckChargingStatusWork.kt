@@ -5,9 +5,11 @@ import android.util.Log
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.myapplication.runCatchingAndLogIfError
@@ -64,6 +66,7 @@ private val TAG = CheckChargingStatusWork::class.simpleName!!.take(23)
 private const val WORK_TAG_PARAM = "TAG"
 private const val HOT_WORK_TAG = "HOT_WORK"
 private const val COLD_WORK_TAG = "COLD_WORK"
+private const val APP_REVIVER_WORK_TAG = "APP_REVIVER_WORK"
 private const val COLD_PERIOD = 60L
 private const val HOT_PERIOD = 5L
 
@@ -75,6 +78,11 @@ fun WorkManager.cancelColdWorkRequest() =
 fun WorkManager.cancelHotWorkRequest() =
     runCatchingAndLogIfError(TAG, "cancelHotWorkRequest: Error") {
         cancelUniqueWork(CheckChargingStatusWork.Hot::class.simpleName!!)
+    }
+
+fun WorkManager.cancelAppReviverWorkRequest() =
+    runCatchingAndLogIfError(TAG, "cancelAppReviverWorkRequest: Error") {
+        cancelUniqueWork(AppReviverWork::class.simpleName!!)
     }
 
 fun WorkManager.enqueueColdWorkRequest() =
@@ -95,6 +103,15 @@ fun WorkManager.enqueueHotWorkRequest() =
         )
     }
 
+fun WorkManager.enqueueAppReviverWorkRequest(period: Duration) =
+    runCatchingAndLogIfError(TAG, "enqueueAppReviverWorkRequest: Error") {
+        enqueueUniquePeriodicWork(
+            TAG,
+            ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
+            getAppReviverWorkRequest(period),
+        )
+    }
+
 private fun getColdWorkRequest() =
     OneTimeWorkRequestBuilder<CheckChargingStatusWork.Cold>()
         .setInitialDelay(Duration.ofSeconds(COLD_PERIOD))
@@ -106,6 +123,11 @@ private fun getHotWorkRequest() =
     OneTimeWorkRequestBuilder<CheckChargingStatusWork.Hot>()
         .setInitialDelay(Duration.ofSeconds(HOT_PERIOD))
         .setTagAndInputData(HOT_WORK_TAG)
+        .build()
+
+private fun getAppReviverWorkRequest(period: Duration) =
+    PeriodicWorkRequestBuilder<AppReviverWork>(period)
+        .addTag(APP_REVIVER_WORK_TAG)
         .build()
 
 private fun OneTimeWorkRequest.Builder.setConstraints() =

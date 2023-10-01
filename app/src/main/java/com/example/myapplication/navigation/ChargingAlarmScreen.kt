@@ -72,6 +72,7 @@ fun ChargingAlarmScreenPreview() {
 }
 
 private val chargingLimitRange = 51..100
+private val reviveAppInDaysRange = 1..10
 
 @Composable
 fun ChargingAlarmScreen(
@@ -108,6 +109,28 @@ fun ChargingAlarmScreen(
                 Text(
                     text = "${chargingLimitRange.min()}% - " +
                             "${chargingLimitRange.max()}%",
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            },
+            singleLine = true,
+            keyboardOptions = numericKeyboard,
+            modifier = Modifier.width(150.dp),
+            enabled = !model.snooze,
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = model.reviveAppInDays,
+            onValueChange = { model.reviveAppInDays = it },
+            isError = !isChargingLimitValid,
+            label = { Text(text = "Revive app in every") },
+            suffix = { Text(text = "days") },
+            supportingText = {
+                Text(
+                    text = "${reviveAppInDaysRange.min()} - " +
+                            "${reviveAppInDaysRange.max()}",
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )

@@ -4,10 +4,14 @@ import android.content.Context
 import android.util.Log
 import com.example.myapplication.NotificationService
 import com.example.myapplication.runCatchingAndLogIfError
+import com.example.myapplication.savedAppSettings
+import com.example.myapplication.work.cancelAppReviverWorkRequest
 import com.example.myapplication.work.cancelColdWorkRequest
 import com.example.myapplication.work.cancelHotWorkRequest
+import com.example.myapplication.work.enqueueAppReviverWorkRequest
 import com.example.myapplication.work.enqueueHotWorkRequest
 import com.example.myapplication.workManager
+import java.time.Duration
 
 interface ChargingAlarmService {
     suspend fun snooze(): Result<Any>
@@ -34,9 +38,11 @@ private class ChargingAlarmServiceImpl(
             context.workManager.let {
                 it.cancelColdWorkRequest()
                 it.cancelHotWorkRequest()
+                it.cancelAppReviverWorkRequest()
             }
             notificationService.cancelNotificationForOvercharging()
             notificationService.cancelNotificationForChargingStarted()
+            notificationService.cancelNotificationForAppRevival()
         }
 
     override suspend fun restart() =
@@ -44,6 +50,10 @@ private class ChargingAlarmServiceImpl(
             Log.d(TAG, "restart")
             snooze()
             context.workManager.enqueueHotWorkRequest()
+            val appSettings = context.savedAppSettings() ?: return@runCatching
+            context.workManager.enqueueAppReviverWorkRequest(
+                Duration.ofDays(appSettings.reviveAppInDays.toLong())
+            )
         }.onFailure {
             Log.e(TAG, "restart: Error in enqueue", it)
         }

@@ -13,6 +13,7 @@ data class AppSettings(
     val snooze: Boolean = false,
     val appLists: List<App> = emptyList(),
     val isAppInitialized: Boolean = false,
+    val reviveAppInDays: Int = 3,
 )
 
 @kotlinx.serialization.Serializable
